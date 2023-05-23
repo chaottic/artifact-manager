@@ -6,11 +6,16 @@ import com.sun.net.httpserver.HttpServer;
 
 import java.io.IOException;
 import java.net.InetSocketAddress;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.nio.file.StandardCopyOption;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.concurrent.Executors;
 
 public final class Main {
+    private static final Path ARTIFACTS_PATH = Paths.get("artifacts");
 
     private Main() {}
 
@@ -18,7 +23,9 @@ public final class Main {
         var server = HttpServer.create(new InetSocketAddress(8080), 0);
 
         try (var executor = Executors.newCachedThreadPool()) {
-            server.createContext("/maven", new Handler(getSha256(args[0].substring(13))));
+            var contextPath = "/maven";
+
+            server.createContext(contextPath, new Handler(getSha256(args[0].substring(13)), contextPath));
             server.setExecutor(executor);
             server.start();
         }
@@ -30,9 +37,11 @@ public final class Main {
 
     private static final class Handler implements HttpHandler {
         private final byte[] sha256;
+        private final String contextPath;
 
-        private Handler(byte[] sha256) {
+        private Handler(byte[] sha256, String contextPath) {
             this.sha256 = sha256;
+            this.contextPath = contextPath;
         }
 
         @Override
@@ -44,20 +53,26 @@ public final class Main {
                 case "PUT" -> {
                     authorized(exchange);
 
-                    try (var outputStream = exchange.getResponseBody()) {
-                        outputStream.write("".getBytes());
-                        outputStream.flush();
+                    var artifactDetails = exchange.getRequestURI().getPath().substring(contextPath.length() + 1);
+                    var path = ARTIFACTS_PATH.resolve(artifactDetails);
+
+                    Files.createDirectories(path);
+
+                    try (var inputStream = exchange.getRequestBody()) {
+                        Files.copy(inputStream, path, StandardCopyOption.REPLACE_EXISTING);
                     }
                 }
                 default -> exchange.sendResponseHeaders(405, -1);
             }
         }
 
-        private void authorized(HttpExchange exchange) {
+        private void authorized(HttpExchange exchange) throws IOException {
             var headers = exchange.getRequestHeaders();
             if (headers.containsKey("Authorization")) {
                 return;
             }
+
+            exchange.sendResponseHeaders(401, -1);
         }
     }
 }
