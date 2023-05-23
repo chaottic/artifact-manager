@@ -28,7 +28,7 @@ public final class ArtifactManager implements HttpHandler {
         var path = artifactsPath.resolve(uriPath.substring(uriPath.indexOf("/") + 1));
 
         var builder = new StringBuilder();
-        builder.append("<!DOCTYPE html><html><h1>").append(path).append("</h1>");
+        builder.append("<!DOCTYPE html><html><head><style>h1 { font-family: \"Montserrat Medium\", Arial, sans-serif; } p { font-family: \"Lato\", Arial, sans-serif;}</style></head><body><h1>").append(path).append("</h1>");
 
         if (Files.isRegularFile(path)) {
             httpExchange.getResponseHeaders().set("Content-Disposition", "attachment; filename=\"%s\"".formatted(path.getFileName()));
@@ -47,14 +47,14 @@ public final class ArtifactManager implements HttpHandler {
         } else if (Files.isDirectory(path)) {
             var parent = path.getParent();
             if (parent != null) {
-                builder.append("<p><a href=").append(Paths.get(uriPath).getParent()).append(">").append("...\\").append("</a></p>");
+                builder.append("<p><a href=").append(Paths.get(uriPath).getParent()).append(">").append(".../").append("</a></p>");
             }
 
             try (var stream = Files.list(path)) {
                 stream.forEachOrdered(child -> {
                     var displayName = child.getFileName().toString();
 
-                    displayName = Files.isDirectory(child) ? "%s\\".formatted(displayName) : displayName;
+                    displayName = Files.isDirectory(child) ? "%s/".formatted(displayName) : displayName;
 
                     var href = Paths.get(uriPath).resolve(child.getFileName());
 
@@ -62,7 +62,7 @@ public final class ArtifactManager implements HttpHandler {
                 });
             }
 
-            builder.append("</html>");
+            builder.append("</body></html>");
 
             var response = builder.toString();
             httpExchange.sendResponseHeaders(200, response.length());
@@ -72,7 +72,7 @@ public final class ArtifactManager implements HttpHandler {
                 outputStream.flush();
             }
         } else {
-            builder.append("<p>404</p>").append("</html>");
+            builder.append("<p>404</p>").append("</body></html>");
 
             var response = builder.toString();
             httpExchange.sendResponseHeaders(404, response.length());
