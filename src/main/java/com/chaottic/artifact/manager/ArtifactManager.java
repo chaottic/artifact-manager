@@ -7,12 +7,19 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.nio.file.StandardCopyOption;
+import java.util.Base64;
 
 public final class ArtifactManager implements HttpHandler {
     private final Path artifactsPath;
 
-    public ArtifactManager(Path artifactsPath) {
+    private final String username;
+    private final String password;
+
+    public ArtifactManager(Path artifactsPath, String username, String password) {
         this.artifactsPath = artifactsPath;
+        this.username = username;
+        this.password = password;
     }
 
     public void getFileOrDirectory(HttpExchange httpExchange) throws IOException {
@@ -44,7 +51,7 @@ public final class ArtifactManager implements HttpHandler {
             }
 
             try (var stream = Files.list(path)) {
-                stream.forEach(child -> {
+                stream.forEachOrdered(child -> {
                     var displayName = child.getFileName().toString();
 
                     displayName = Files.isDirectory(child) ? "%s\\".formatted(displayName) : displayName;
@@ -77,13 +84,39 @@ public final class ArtifactManager implements HttpHandler {
         }
     }
 
+    public void createAuthorizedFileOrDirectories(HttpExchange httpExchange) throws IOException {
+        var headers = httpExchange.getRequestHeaders();
+        if (headers.containsKey("Authorization")) {
+            var credentials = new String(Base64.getDecoder().decode(headers.getFirst("Authorization").substring(6))).split(":", 2);
+
+            if (credentials[0].equals(username) && credentials[1].equals(password)) {
+                var path = artifactsPath.resolve(httpExchange.getRequestURI().getPath().substring(1));
+
+                Files.createDirectories(path);
+
+                try (var inputStream = httpExchange.getRequestBody()) {
+                    Files.copy(inputStream, path, StandardCopyOption.REPLACE_EXISTING);
+                }
+
+                var response = "Successfully published artifact.";
+                httpExchange.sendResponseHeaders(200, response.length());
+                try (var outputStream = httpExchange.getResponseBody()) {
+                    outputStream.write(response.getBytes());
+                    outputStream.flush();
+                }
+                return;
+            }
+        }
+
+        httpExchange.sendResponseHeaders(401, -1);
+    }
+
     @Override
     public void handle(HttpExchange exchange) throws IOException {
         switch (exchange.getRequestMethod()) {
-            case "GET" -> {
-                getFileOrDirectory(exchange);
-            }
-            default -> exchange.sendResponseHeaders(405, 0);
+            case "PUT" -> createAuthorizedFileOrDirectories(exchange);
+            case "GET" -> getFileOrDirectory(exchange);
+            default -> exchange.sendResponseHeaders(405, -1);
         }
     }
 }
