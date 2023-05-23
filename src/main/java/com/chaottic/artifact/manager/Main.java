@@ -9,70 +9,81 @@ import java.net.InetSocketAddress;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.nio.file.StandardCopyOption;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
-import java.util.concurrent.Executors;
 
 public final class Main {
     private static final Path ARTIFACTS_PATH = Paths.get("artifacts");
 
+    private static final Path ROOT = Paths.get("/");
+
     private Main() {}
 
-    public static void main(String[] args) throws NoSuchAlgorithmException, IOException {
+    public static void main(String[] args) throws IOException {
         var server = HttpServer.create(new InetSocketAddress(8080), 0);
-
-        try (var executor = Executors.newCachedThreadPool()) {
-            var contextPath = "/maven";
-
-            server.createContext(contextPath, new Handler(getSha256(args[0].substring(13)), contextPath));
-            server.setExecutor(executor);
-            server.start();
-        }
+        server.createContext("/", new ExchangeHandler("test", "test"));
+        server.setExecutor(null);
+        server.start();
     }
 
-    private static byte[] getSha256(String credentials) throws NoSuchAlgorithmException {
-        return MessageDigest.getInstance("SHA-256").digest(credentials.getBytes());
-    }
-
-    private static final class Handler implements HttpHandler {
-        private final byte[] sha256;
-        private final String contextPath;
-
-        private Handler(byte[] sha256, String contextPath) {
-            this.sha256 = sha256;
-            this.contextPath = contextPath;
-        }
-
+    private record ExchangeHandler(String username, String password) implements HttpHandler {
         @Override
         public void handle(HttpExchange exchange) throws IOException {
             switch (exchange.getRequestMethod()) {
-                case "GET" -> {
-
-                }
                 case "PUT" -> {
-                    authorized(exchange);
-
-                    var artifactDetails = exchange.getRequestURI().getPath().substring(contextPath.length() + 1);
-                    var path = ARTIFACTS_PATH.resolve(artifactDetails);
-
-                    Files.createDirectories(path);
-
-                    try (var inputStream = exchange.getRequestBody()) {
-                        Files.copy(inputStream, path, StandardCopyOption.REPLACE_EXISTING);
+                    var headers = exchange.getRequestHeaders();
+                    if (headers.containsKey("Authorization")) {
+                        System.out.println(headers.getFirst("Authorization"));
                     }
+
+                    exchange.sendResponseHeaders(401, -1);
                 }
-                default -> exchange.sendResponseHeaders(405, -1);
+                case "GET" -> {
+                    getFileOrDirectory(exchange);
+                }
+                default -> exchange.sendResponseHeaders(405, 0);
             }
         }
 
-        private void authorized(HttpExchange exchange) throws IOException {
-            var headers = exchange.getRequestHeaders();
-            if (headers.containsKey("Authorization")) {
-                return;
+        private void getFileOrDirectory(HttpExchange httpExchange) throws IOException {
+            var path = getPath(httpExchange.getRequestURI().getPath());
+
+            var builder = new StringBuilder();
+            builder.append("<!DOCTYPE html><html><h1>").append(path).append("</h1>");
+
+            if (path.getParent() != null) {
+                builder.append("<p><a href=").append(ROOT.resolve(path.getParent())).append(">").append("...\\").append("</a></p>");
             }
 
-            exchange.sendResponseHeaders(401, -1);
+            if (Files.isRegularFile(path)) {
+
+            } else if (Files.isDirectory(path)) {
+                try (var list = Files.list(path)) {
+                    list.forEach(child -> {
+                        var fileName = child.getFileName();
+
+                        builder.append("<p><a href=").append(ROOT.resolve(child)).append(">").append(Files.isDirectory(path) ? "%s\\".formatted(fileName) : fileName).append("</a></p>");
+                    });
+                }
+            } else {
+                builder.append("<p>404</p>");
+            }
+
+            var response = builder.append("</html>").toString();
+
+            httpExchange.getResponseHeaders().set("Content-Type", "text/html");
+            httpExchange.sendResponseHeaders(200, response.length());
+
+            try (var outputStream = httpExchange.getResponseBody()) {
+                outputStream.write(response.getBytes());
+                outputStream.flush();
+            }
+        }
+
+        private Path getPath(String path) {
+            if (path.equals("/")) {
+               return ARTIFACTS_PATH;
+            }
+
+            return Paths.get(path.substring(path.indexOf("/") + 1));
         }
     }
 }
