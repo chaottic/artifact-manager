@@ -2,6 +2,8 @@ package com.chaottic.artifact.manager;
 
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpHandler;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -11,6 +13,8 @@ import java.nio.file.StandardCopyOption;
 import java.util.Base64;
 
 public final class ArtifactManager implements HttpHandler {
+    private static final Logger LOGGER = LoggerFactory.getLogger("Artifact Manager");
+
     private final Path artifactsPath;
 
     private final String username;
@@ -23,6 +27,7 @@ public final class ArtifactManager implements HttpHandler {
     }
 
     public void getFileOrDirectory(HttpExchange httpExchange) throws IOException {
+
         var uriPath = httpExchange.getRequestURI().getPath();
 
         var path = artifactsPath.resolve(uriPath.substring(uriPath.indexOf("/") + 1));
@@ -92,23 +97,25 @@ public final class ArtifactManager implements HttpHandler {
             if (credentials[0].equals(username) && credentials[1].equals(password)) {
                 var path = artifactsPath.resolve(httpExchange.getRequestURI().getPath().substring(1));
 
-                Files.createDirectories(path);
+                LOGGER.info(String.valueOf(path));
 
-                try (var inputStream = httpExchange.getRequestBody()) {
-                    Files.copy(inputStream, path, StandardCopyOption.REPLACE_EXISTING);
-                }
+                httpExchange.sendResponseHeaders(200, -1);
 
-                var response = "Successfully published artifact.";
-                httpExchange.sendResponseHeaders(200, response.length());
-                try (var outputStream = httpExchange.getResponseBody()) {
-                    outputStream.write(response.getBytes());
-                    outputStream.flush();
-                }
+                // TODO:: Async
+                supply(path, httpExchange);
                 return;
             }
         }
 
         httpExchange.sendResponseHeaders(401, -1);
+    }
+
+    private void supply(Path path, HttpExchange httpExchange) throws IOException {
+        Files.createDirectories(path);
+
+        try (var inputStream = httpExchange.getRequestBody()) {
+            Files.copy(inputStream, path, StandardCopyOption.REPLACE_EXISTING);
+        }
     }
 
     @Override
