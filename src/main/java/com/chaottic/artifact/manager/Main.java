@@ -15,8 +15,8 @@ public final class Main {
 
     public static void main(String[] args) throws IOException, ParseException {
         var options = new Options();
-        options.addOption("username", true, "");
-        options.addOption("password", true, "");
+        options.addRequiredOption("u", "username", true, "");
+        options.addRequiredOption("p", "password", true, "");
 
         var parser = new DefaultParser();
         var cli = parser.parse(options, args);

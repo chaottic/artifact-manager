@@ -27,7 +27,6 @@ public final class ArtifactManager implements HttpHandler {
     }
 
     public void getFileOrDirectory(HttpExchange httpExchange) throws IOException {
-
         var uriPath = httpExchange.getRequestURI().getPath();
 
         var path = artifactsPath.resolve(uriPath.substring(uriPath.indexOf("/") + 1));
@@ -97,9 +96,11 @@ public final class ArtifactManager implements HttpHandler {
             if (credentials[0].equals(username) && credentials[1].equals(password)) {
                 var path = artifactsPath.resolve(httpExchange.getRequestURI().getPath().substring(1));
 
-                LOGGER.info(String.valueOf(path));
-
                 httpExchange.sendResponseHeaders(200, -1);
+
+                if (System.console() != null) {
+                    LOGGER.info(String.valueOf(path));
+                }
 
                 // TODO:: Async
                 supply(path, httpExchange);
